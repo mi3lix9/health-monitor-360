@@ -214,10 +214,6 @@ export const generateRandomVitals = (playerId: number): VitalSigns => {
 };
 
 export const determinePlayerStatus = (vitals: VitalSigns, previousStatus?: 'normal' | 'warning' | 'alert' | 'infection', previousTimestamp?: number): 'normal' | 'warning' | 'alert' | 'infection' => {
-  if (detectInfection(vitals)) {
-    return 'infection';
-  }
-  
   const temperatureStatus = calculateStatus(vitals.temperature, VITAL_RANGES.temperature);
   const heartRateStatus = calculateStatus(vitals.heartRate, VITAL_RANGES.heartRate);
   const bloodOxygenStatus = calculateStatus(vitals.bloodOxygen, VITAL_RANGES.bloodOxygen);
