@@ -75,7 +75,6 @@ export const getStatusColor = (status: 'normal' | 'warning' | 'alert' | 'infecti
 export const calculateStatus = (value: number, ranges: VitalRanges): 'normal' | 'warning' | 'alert' => {
   if (value >= ranges.min && value <= ranges.max) return 'normal';
   
-  // For temperature, heart rate, and respiration, being slightly outside range is a warning, far outside is alert
   const lowerThreshold = ranges.min - (ranges.max - ranges.min) * 0.1;
   const upperThreshold = ranges.max + (ranges.max - ranges.min) * 0.1;
   
@@ -84,26 +83,18 @@ export const calculateStatus = (value: number, ranges: VitalRanges): 'normal' | 
 };
 
 export const detectInfection = (vitals: VitalSigns): boolean => {
-  // Infection typically manifests as:
-  // 1. Elevated temperature (fever) above 38°C
-  // 2. Elevated heart rate 
-  // 3. Possibly lowered blood oxygen, though this depends on infection type
-  
   const hasFever = vitals.temperature >= 38.0;
   const hasElevatedHeartRate = vitals.heartRate >= 100;
   const hasLowBloodOxygen = vitals.bloodOxygen < 94;
   
-  // If temperature is very high (39+) and at least one other vital is abnormal, likely infection
   if (vitals.temperature >= 39.0 && (hasElevatedHeartRate || hasLowBloodOxygen)) {
     return true;
   }
   
-  // If all three conditions are present, likely infection
   if (hasFever && hasElevatedHeartRate && hasLowBloodOxygen) {
     return true;
   }
   
-  // If fever + either elevated heart rate or low blood oxygen, may be early infection
   if (hasFever && (hasElevatedHeartRate || hasLowBloodOxygen)) {
     return true;
   }
@@ -111,80 +102,118 @@ export const detectInfection = (vitals: VitalSigns): boolean => {
   return false;
 };
 
-export const generateRandomVitals = (playerId: number): VitalSigns => {
-  // Base values - mostly normal with occasional warning/alert
-  const randomFactor = Math.random();
-  const isNormal = randomFactor > 0.2;
-  const isWarning = randomFactor <= 0.2 && randomFactor > 0.05;
-  // isAlert = randomFactor <= 0.05
-  
-  // Temperature: normal range 36.5-37.5°C
-  const tempRange = VITAL_RANGES.temperature;
-  let temperature: number;
-  
-  if (isNormal) {
-    temperature = tempRange.min + Math.random() * (tempRange.max - tempRange.min);
-  } else if (isWarning) {
-    // Slightly elevated
-    temperature = tempRange.max + Math.random() * 0.5;
-  } else {
-    // Fever or hypothermia
-    temperature = Math.random() < 0.5
-      ? tempRange.min - Math.random() * 1
-      : tempRange.max + Math.random() * 1;
-  }
-  
-  // Heart rate: normal range 60-100 BPM
-  const hrRange = VITAL_RANGES.heartRate;
-  let heartRate: number;
-  
-  if (isNormal) {
-    heartRate = hrRange.min + Math.random() * (hrRange.max - hrRange.min);
-  } else if (isWarning) {
-    // Slightly elevated/low
-    heartRate = Math.random() < 0.5
-      ? hrRange.min - Math.random() * 10
-      : hrRange.max + Math.random() * 20;
-  } else {
-    // Very high/low
-    heartRate = Math.random() < 0.5
-      ? hrRange.min - Math.random() * 20
-      : hrRange.max + Math.random() * 40;
-  }
-  
-  // Blood oxygen: normal range 95-100%
-  const oxRange = VITAL_RANGES.bloodOxygen;
-  let bloodOxygen: number;
-  
-  if (isNormal) {
-    bloodOxygen = oxRange.min + Math.random() * (oxRange.max - oxRange.min);
-  } else if (isWarning) {
-    // Slightly low
-    bloodOxygen = oxRange.min - Math.random() * 3;
-  } else {
-    // Very low
-    bloodOxygen = oxRange.min - Math.random() * 10;
-  }
-  
-  // Additional metrics for detailed view
-  const hydration = VITAL_RANGES.hydration.min + Math.random() * (VITAL_RANGES.hydration.max - VITAL_RANGES.hydration.min);
-  const respiration = VITAL_RANGES.respiration.min + Math.random() * (VITAL_RANGES.respiration.max - VITAL_RANGES.respiration.min);
-  const fatigue = VITAL_RANGES.fatigue.min + Math.random() * (VITAL_RANGES.fatigue.max - VITAL_RANGES.fatigue.min);
+const previousVitals: Record<number, VitalSigns> = {};
 
-  return {
-    temperature: parseFloat(temperature.toFixed(1)),
-    heartRate: Math.round(heartRate),
-    bloodOxygen: parseFloat(bloodOxygen.toFixed(1)),
-    hydration: parseFloat(hydration.toFixed(1)),
-    respiration: parseFloat(respiration.toFixed(1)),
-    fatigue: parseFloat(fatigue.toFixed(1)),
-    timestamp: Date.now(),
-    alertDuration: 0
+export const generateRandomVitals = (playerId: number): VitalSigns => {
+  const now = Date.now();
+  const prevVitals = previousVitals[playerId];
+  
+  if (!prevVitals) {
+    const initialVitals = {
+      temperature: 36.8 + (Math.random() * 0.6 - 0.3),
+      heartRate: 70 + Math.floor(Math.random() * 20 - 10),
+      bloodOxygen: 97 + (Math.random() * 2),
+      hydration: 70 + Math.random() * 20,
+      respiration: 14 + Math.random() * 4,
+      fatigue: 20 + Math.random() * 20,
+      timestamp: now
+    };
+    
+    previousVitals[playerId] = initialVitals;
+    return initialVitals;
+  }
+  
+  const shouldStartIncident = Math.random() < 0.005;
+  const isInIncident = prevVitals.temperature > 37.7 || 
+                        prevVitals.temperature < 36.3 || 
+                        prevVitals.heartRate > 110 || 
+                        prevVitals.heartRate < 50 || 
+                        prevVitals.bloodOxygen < 93;
+  
+  const shouldStartRecovery = isInIncident && Math.random() < 0.02;
+  
+  let tempChange = 0;
+  let hrChange = 0;
+  let oxygenChange = 0;
+  
+  const smallRandomChange = () => (Math.random() * 0.2) - 0.1;
+  
+  if (shouldStartIncident) {
+    const incidentType = Math.floor(Math.random() * 4);
+    
+    switch (incidentType) {
+      case 0:
+        tempChange = 0.2;
+        hrChange = 2;
+        break;
+      case 1:
+        tempChange = -0.2;
+        break;
+      case 2:
+        hrChange = 5;
+        tempChange = 0.1;
+        break;
+      case 3:
+        oxygenChange = -0.5;
+        hrChange = 2;
+        break;
+    }
+  } else if (shouldStartRecovery) {
+    if (prevVitals.temperature > 37.5) tempChange = -0.2;
+    if (prevVitals.temperature < 36.5) tempChange = 0.2;
+    if (prevVitals.heartRate > 100) hrChange = -3;
+    if (prevVitals.heartRate < 60) hrChange = 3;
+    if (prevVitals.bloodOxygen < 95) oxygenChange = 0.5;
+  } else {
+    tempChange = smallRandomChange();
+    hrChange = smallRandomChange() * 3;
+    oxygenChange = smallRandomChange() * 0.5;
+    
+    if (isInIncident) {
+      if (prevVitals.temperature > 38.0) tempChange = 0.1;
+      if (prevVitals.heartRate > 120) hrChange = 2;
+      if (prevVitals.bloodOxygen < 92) oxygenChange = -0.3;
+    }
+  }
+  
+  let newTemp = Math.max(35.5, Math.min(40.0, prevVitals.temperature + tempChange));
+  let newHR = Math.max(40, Math.min(180, prevVitals.heartRate + hrChange));
+  let newOxygen = Math.max(85, Math.min(100, prevVitals.bloodOxygen + oxygenChange));
+  
+  let newHydration = prevVitals.hydration;
+  let newRespiration = prevVitals.respiration;
+  let newFatigue = prevVitals.fatigue;
+  
+  if (newHR > 100) {
+    newRespiration += 0.3;
+    newHydration -= 0.2;
+    newFatigue += 0.3;
+  } else {
+    newRespiration += smallRandomChange();
+    newHydration += smallRandomChange() * 0.5;
+    newFatigue += smallRandomChange() * 0.5;
+  }
+  
+  newHydration = Math.max(40, Math.min(100, newHydration));
+  newRespiration = Math.max(8, Math.min(30, newRespiration));
+  newFatigue = Math.max(5, Math.min(95, newFatigue));
+  
+  const newVitals = {
+    temperature: parseFloat(newTemp.toFixed(1)),
+    heartRate: Math.round(newHR),
+    bloodOxygen: parseFloat(newOxygen.toFixed(1)),
+    hydration: parseFloat(newHydration.toFixed(1)),
+    respiration: parseFloat(newRespiration.toFixed(1)),
+    fatigue: parseFloat(newFatigue.toFixed(1)),
+    timestamp: now
   };
+  
+  previousVitals[playerId] = newVitals;
+  
+  return newVitals;
 };
 
 export const determinePlayerStatus = (vitals: VitalSigns, previousStatus?: 'normal' | 'warning' | 'alert' | 'infection', previousTimestamp?: number): 'normal' | 'warning' | 'alert' | 'infection' => {
-  // First check if player shows signs of infection
   if (detectInfection(vitals)) {
     return 'infection';
   }
@@ -193,7 +222,6 @@ export const determinePlayerStatus = (vitals: VitalSigns, previousStatus?: 'norm
   const heartRateStatus = calculateStatus(vitals.heartRate, VITAL_RANGES.heartRate);
   const bloodOxygenStatus = calculateStatus(vitals.bloodOxygen, VITAL_RANGES.bloodOxygen);
   
-  // Determine current status based on vitals
   let currentStatus: 'normal' | 'warning' | 'alert';
   
   if (temperatureStatus === 'alert' || heartRateStatus === 'alert' || bloodOxygenStatus === 'alert') {
@@ -204,16 +232,13 @@ export const determinePlayerStatus = (vitals: VitalSigns, previousStatus?: 'norm
     currentStatus = 'normal';
   }
   
-  // If no previous status or not in alert state, just return current status
   if (!previousStatus || currentStatus !== 'alert' || !previousTimestamp) {
     return currentStatus;
   }
   
-  // Calculate how long the alert has been active (in seconds)
   const alertDuration = previousStatus === 'alert' ? 
     ((vitals.timestamp - previousTimestamp) / 1000) : 0;
   
-  // If alert has been active for more than 30 seconds (persistent danger), upgrade to infection
   if (alertDuration > 30 && previousStatus === 'alert' && currentStatus === 'alert') {
     return 'infection';
   }
