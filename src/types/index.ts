@@ -1,11 +1,10 @@
-
 export interface Player {
   id: number;
   name: string;
   number: number;
   position: string;
   imageUrl: string;
-  status: 'normal' | 'warning' | 'alert';
+  status: 'normal' | 'warning' | 'alert' | 'infection';
 }
 
 export interface VitalSigns {
@@ -16,6 +15,7 @@ export interface VitalSigns {
   respiration?: number;
   fatigue?: number;
   timestamp: number;
+  alertDuration?: number;
 }
 
 export interface PlayerWithVitals extends Player {
@@ -57,7 +57,7 @@ export const CHART_COLORS = {
   fatigue: '#6B7280' // gray
 };
 
-export const getStatusColor = (status: 'normal' | 'warning' | 'alert') => {
+export const getStatusColor = (status: 'normal' | 'warning' | 'alert' | 'infection') => {
   switch (status) {
     case 'normal':
       return 'bg-success text-white';
@@ -65,6 +65,8 @@ export const getStatusColor = (status: 'normal' | 'warning' | 'alert') => {
       return 'bg-warning text-white';
     case 'alert':
       return 'bg-danger text-white';
+    case 'infection':
+      return 'bg-purple-600 text-white';
     default:
       return 'bg-gray-200 text-gray-800';
   }
@@ -81,7 +83,34 @@ export const calculateStatus = (value: number, ranges: VitalRanges): 'normal' | 
   return 'warning';
 };
 
-// Added the missing functions by moving them from dataUtils.ts to types/index.ts
+export const detectInfection = (vitals: VitalSigns): boolean => {
+  // Infection typically manifests as:
+  // 1. Elevated temperature (fever) above 38°C
+  // 2. Elevated heart rate 
+  // 3. Possibly lowered blood oxygen, though this depends on infection type
+  
+  const hasFever = vitals.temperature >= 38.0;
+  const hasElevatedHeartRate = vitals.heartRate >= 100;
+  const hasLowBloodOxygen = vitals.bloodOxygen < 94;
+  
+  // If temperature is very high (39+) and at least one other vital is abnormal, likely infection
+  if (vitals.temperature >= 39.0 && (hasElevatedHeartRate || hasLowBloodOxygen)) {
+    return true;
+  }
+  
+  // If all three conditions are present, likely infection
+  if (hasFever && hasElevatedHeartRate && hasLowBloodOxygen) {
+    return true;
+  }
+  
+  // If fever + either elevated heart rate or low blood oxygen, may be early infection
+  if (hasFever && (hasElevatedHeartRate || hasLowBloodOxygen)) {
+    return true;
+  }
+  
+  return false;
+};
+
 export const generateRandomVitals = (playerId: number): VitalSigns => {
   // Base values - mostly normal with occasional warning/alert
   const randomFactor = Math.random();
@@ -149,22 +178,45 @@ export const generateRandomVitals = (playerId: number): VitalSigns => {
     hydration: parseFloat(hydration.toFixed(1)),
     respiration: parseFloat(respiration.toFixed(1)),
     fatigue: parseFloat(fatigue.toFixed(1)),
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    alertDuration: 0
   };
 };
 
-export const determinePlayerStatus = (vitals: VitalSigns): 'normal' | 'warning' | 'alert' => {
+export const determinePlayerStatus = (vitals: VitalSigns, previousStatus?: 'normal' | 'warning' | 'alert' | 'infection', previousTimestamp?: number): 'normal' | 'warning' | 'alert' | 'infection' => {
+  // First check if player shows signs of infection
+  if (detectInfection(vitals)) {
+    return 'infection';
+  }
+  
   const temperatureStatus = calculateStatus(vitals.temperature, VITAL_RANGES.temperature);
   const heartRateStatus = calculateStatus(vitals.heartRate, VITAL_RANGES.heartRate);
   const bloodOxygenStatus = calculateStatus(vitals.bloodOxygen, VITAL_RANGES.bloodOxygen);
   
+  // Determine current status based on vitals
+  let currentStatus: 'normal' | 'warning' | 'alert';
+  
   if (temperatureStatus === 'alert' || heartRateStatus === 'alert' || bloodOxygenStatus === 'alert') {
-    return 'alert';
+    currentStatus = 'alert';
+  } else if (temperatureStatus === 'warning' || heartRateStatus === 'warning' || bloodOxygenStatus === 'warning') {
+    currentStatus = 'warning';
+  } else {
+    currentStatus = 'normal';
   }
   
-  if (temperatureStatus === 'warning' || heartRateStatus === 'warning' || bloodOxygenStatus === 'warning') {
-    return 'warning';
+  // If no previous status or not in alert state, just return current status
+  if (!previousStatus || currentStatus !== 'alert' || !previousTimestamp) {
+    return currentStatus;
   }
   
-  return 'normal';
+  // Calculate how long the alert has been active (in seconds)
+  const alertDuration = previousStatus === 'alert' ? 
+    ((vitals.timestamp - previousTimestamp) / 1000) : 0;
+  
+  // If alert has been active for more than 30 seconds (persistent danger), upgrade to infection
+  if (alertDuration > 30 && previousStatus === 'alert' && currentStatus === 'alert') {
+    return 'infection';
+  }
+  
+  return currentStatus;
 };
