@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -8,6 +7,7 @@ import { PlayerWithVitals, VitalsHistory, VITAL_RANGES } from '../types';
 import StatusBadge from '../components/StatusBadge';
 import VitalCard from '../components/VitalCard';
 import VitalChart from '../components/VitalChart';
+import PlayerHealthAlert from '../components/PlayerHealthAlert';
 
 const PlayerDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -67,6 +67,8 @@ const PlayerDetail: React.FC = () => {
         </div>
         <StatusBadge status={player.status} pulseAnimation={true} />
       </div>
+      
+      <PlayerHealthAlert player={player} />
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="lg:col-span-1">
