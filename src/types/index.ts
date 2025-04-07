@@ -37,15 +37,52 @@ export interface VitalStatus {
 export interface VitalRanges {
   min: number;
   max: number;
+  alert?: {
+    min: number;
+    max: number;
+  };
+  warning?: {
+    min: number;
+    max: number;
+  };
 }
 
 export const VITAL_RANGES = {
-  temperature: { min: 36.5, max: 37.5 },
-  heartRate: { min: 60, max: 100 },
-  bloodOxygen: { min: 95, max: 100 },
-  hydration: { min: 50, max: 100 },
-  respiration: { min: 12, max: 20 },
-  fatigue: { min: 0, max: 50 }
+  temperature: { 
+    min: 36.5, 
+    max: 37.5,
+    alert: { min: 38.5, max: 40.0 } 
+  },
+  heartRate: { 
+    min: 60, 
+    max: 100,
+    warning: { min: 100, max: 130 },
+    alert: { min: 130, max: 180 } 
+  },
+  bloodOxygen: { 
+    min: 95, 
+    max: 100,
+    warning: { min: 92, max: 95 },
+    alert: { min: 0, max: 92 } 
+  },
+  hydration: { 
+    min: 85, 
+    max: 100,
+    warning: { min: 70, max: 85 },
+    alert: { min: 0, max: 70 } 
+  },
+  respiration: { 
+    min: 12, 
+    max: 20,
+    warning: { min: 20, max: 25 },
+    alert: { min: 25, max: 40 } 
+  },
+  fatigue: { 
+    min: 0, 
+    max: 40,
+    warning: { min: 40, max: 70 },
+    alert: { min: 70, max: 100 } 
+  }
 };
 
 export const CHART_COLORS = {
@@ -73,12 +110,28 @@ export const getStatusColor = (status: 'normal' | 'warning' | 'alert' | 'infecti
 };
 
 export const calculateStatus = (value: number, ranges: VitalRanges): 'normal' | 'warning' | 'alert' => {
-  if (value >= ranges.min && value <= ranges.max) return 'normal';
+  if (ranges.alert) {
+    if (value <= ranges.alert.min || value >= ranges.alert.max) {
+      return 'alert';
+    }
+  } else {
+    const lowerThreshold = ranges.min - (ranges.max - ranges.min) * 0.1;
+    const upperThreshold = ranges.max + (ranges.max - ranges.min) * 0.1;
+    if (value < lowerThreshold || value > upperThreshold) {
+      return 'alert';
+    }
+  }
   
-  const lowerThreshold = ranges.min - (ranges.max - ranges.min) * 0.1;
-  const upperThreshold = ranges.max + (ranges.max - ranges.min) * 0.1;
+  if (ranges.warning) {
+    if (value <= ranges.warning.min || value >= ranges.warning.max) {
+      return 'warning';
+    }
+  }
   
-  if (value < lowerThreshold || value > upperThreshold) return 'alert';
+  if (value >= ranges.min && value <= ranges.max) {
+    return 'normal';
+  }
+  
   return 'warning';
 };
 
@@ -103,19 +156,61 @@ export const detectInfection = (vitals: VitalSigns): boolean => {
 };
 
 const previousVitals: Record<number, VitalSigns> = {};
+const activityPhases: Record<number, { 
+  phase: 'rest' | 'light_activity' | 'intense_activity' | 'recovery',
+  duration: number,
+  elapsed: number 
+}> = {};
 
 export const generateRandomVitals = (playerId: number): VitalSigns => {
   const now = Date.now();
   const prevVitals = previousVitals[playerId];
   
+  if (!activityPhases[playerId]) {
+    activityPhases[playerId] = {
+      phase: 'light_activity',
+      duration: 60 + Math.floor(Math.random() * 120),
+      elapsed: 0
+    };
+  }
+  
+  let playerPhase = activityPhases[playerId];
+  playerPhase.elapsed += prevVitals ? (now - prevVitals.timestamp) / 1000 : 0;
+  
+  if (playerPhase.elapsed >= playerPhase.duration) {
+    let nextPhase: 'rest' | 'light_activity' | 'intense_activity' | 'recovery';
+    
+    switch (playerPhase.phase) {
+      case 'rest':
+        nextPhase = Math.random() < 0.7 ? 'light_activity' : 'intense_activity';
+        break;
+      case 'light_activity':
+        nextPhase = Math.random() < 0.6 ? 'intense_activity' : 'rest';
+        break;
+      case 'intense_activity':
+        nextPhase = Math.random() < 0.8 ? 'recovery' : 'light_activity';
+        break;
+      case 'recovery':
+        nextPhase = Math.random() < 0.7 ? 'light_activity' : 'rest';
+        break;
+    }
+    
+    activityPhases[playerId] = {
+      phase: nextPhase,
+      duration: 30 + Math.floor(Math.random() * (nextPhase === 'intense_activity' ? 60 : 180)),
+      elapsed: 0
+    };
+    playerPhase = activityPhases[playerId];
+  }
+  
   if (!prevVitals) {
     const initialVitals = {
-      temperature: 36.8 + (Math.random() * 0.6 - 0.3),
-      heartRate: 70 + Math.floor(Math.random() * 20 - 10),
+      temperature: 36.8 + (Math.random() * 0.4 - 0.2),
+      heartRate: 70 + Math.floor(Math.random() * 15),
       bloodOxygen: 97 + (Math.random() * 2),
-      hydration: 70 + Math.random() * 20,
-      respiration: 14 + Math.random() * 4,
-      fatigue: 20 + Math.random() * 20,
+      hydration: 90 + Math.random() * 10,
+      respiration: 14 + Math.random() * 3,
+      fatigue: 10 + Math.random() * 15,
       timestamp: now
     };
     
@@ -123,80 +218,106 @@ export const generateRandomVitals = (playerId: number): VitalSigns => {
     return initialVitals;
   }
   
-  const shouldStartIncident = Math.random() < 0.005;
-  const isInIncident = prevVitals.temperature > 37.7 || 
-                        prevVitals.temperature < 36.3 || 
-                        prevVitals.heartRate > 110 || 
-                        prevVitals.heartRate < 50 || 
-                        prevVitals.bloodOxygen < 93;
-  
-  const shouldStartRecovery = isInIncident && Math.random() < 0.02;
-  
   let tempChange = 0;
   let hrChange = 0;
   let oxygenChange = 0;
+  let hydrationChange = 0;
+  let respirationChange = 0;
+  let fatigueChange = 0;
   
   const smallRandomChange = () => (Math.random() * 0.2) - 0.1;
   
-  if (shouldStartIncident) {
-    const incidentType = Math.floor(Math.random() * 4);
+  switch(playerPhase.phase) {
+    case 'rest':
+      tempChange = prevVitals.temperature > 37.0 ? -0.05 - (Math.random() * 0.1) : smallRandomChange() * 0.5;
+      hrChange = prevVitals.heartRate > 70 ? -1 - Math.floor(Math.random() * 3) : smallRandomChange();
+      oxygenChange = prevVitals.bloodOxygen < 98 ? 0.1 + (Math.random() * 0.2) : smallRandomChange() * 0.2;
+      hydrationChange = prevVitals.hydration < 95 ? 0.2 + (Math.random() * 0.3) : 0;
+      respirationChange = prevVitals.respiration > 14 ? -0.2 - (Math.random() * 0.3) : smallRandomChange() * 0.2;
+      fatigueChange = prevVitals.fatigue > 10 ? -0.3 - (Math.random() * 0.5) : 0;
+      break;
+      
+    case 'light_activity':
+      tempChange = 0.02 + (Math.random() * 0.05);
+      hrChange = 0.5 + Math.floor(Math.random() * 2);
+      oxygenChange = smallRandomChange() * 0.3;
+      hydrationChange = -0.1 - (Math.random() * 0.2);
+      respirationChange = 0.1 + (Math.random() * 0.2);
+      fatigueChange = 0.2 + (Math.random() * 0.4);
+      break;
+      
+    case 'intense_activity':
+      tempChange = 0.05 + (Math.random() * 0.15);
+      hrChange = 2 + Math.floor(Math.random() * 5);
+      oxygenChange = -0.1 - (Math.random() * 0.3);
+      hydrationChange = -0.3 - (Math.random() * 0.5);
+      respirationChange = 0.3 + (Math.random() * 0.5);
+      fatigueChange = 0.5 + (Math.random() * 1.0);
+      break;
+      
+    case 'recovery':
+      tempChange = prevVitals.temperature > 37.2 ? -0.03 - (Math.random() * 0.07) : smallRandomChange() * 0.5;
+      hrChange = prevVitals.heartRate > 90 ? -0.5 - Math.floor(Math.random() * 2) : smallRandomChange();
+      oxygenChange = prevVitals.bloodOxygen < 97 ? 0.05 + (Math.random() * 0.15) : smallRandomChange() * 0.2;
+      hydrationChange = -0.05 - (Math.random() * 0.1);
+      respirationChange = prevVitals.respiration > 16 ? -0.1 - (Math.random() * 0.2) : smallRandomChange() * 0.2;
+      fatigueChange = 0.1 + (Math.random() * 0.2);
+      break;
+  }
+  
+  const shouldStartIncident = Math.random() < 0.002;
+  const isInIncident = prevVitals.temperature > 38.0 || 
+                        prevVitals.heartRate > 130 || 
+                        prevVitals.bloodOxygen < 92 ||
+                        prevVitals.hydration < 70;
+  
+  const shouldStartRecovery = isInIncident && Math.random() < 0.05;
+  
+  if (shouldStartIncident && !isInIncident) {
+    console.log(`Health incident starting for player ${playerId}`);
+    const incidentType = Math.floor(Math.random() * 5);
     
     switch (incidentType) {
       case 0:
-        tempChange = 0.2;
-        hrChange = 2;
+        tempChange = 0.3 + (Math.random() * 0.5);
+        hrChange = 3 + Math.floor(Math.random() * 5);
         break;
       case 1:
-        tempChange = -0.2;
+        hrChange = 5 + Math.floor(Math.random() * 15);
+        respirationChange = 0.5 + (Math.random() * 1.5);
         break;
       case 2:
-        hrChange = 5;
-        tempChange = 0.1;
+        oxygenChange = -0.5 - (Math.random() * 2.0);
+        respirationChange = 0.8 + (Math.random() * 1.5);
         break;
       case 3:
-        oxygenChange = -0.5;
-        hrChange = 2;
+        hydrationChange = -1.0 - (Math.random() * 3.0);
+        tempChange = 0.2 + (Math.random() * 0.3);
+        break;
+      case 4:
+        fatigueChange = 2.0 + (Math.random() * 5.0);
+        hrChange = -2 - Math.floor(Math.random() * 4);
         break;
     }
   } else if (shouldStartRecovery) {
-    if (prevVitals.temperature > 37.5) tempChange = -0.2;
-    if (prevVitals.temperature < 36.5) tempChange = 0.2;
-    if (prevVitals.heartRate > 100) hrChange = -3;
-    if (prevVitals.heartRate < 60) hrChange = 3;
-    if (prevVitals.bloodOxygen < 95) oxygenChange = 0.5;
-  } else {
-    tempChange = smallRandomChange();
-    hrChange = smallRandomChange() * 3;
-    oxygenChange = smallRandomChange() * 0.5;
-    
-    if (isInIncident) {
-      if (prevVitals.temperature > 38.0) tempChange = 0.1;
-      if (prevVitals.heartRate > 120) hrChange = 2;
-      if (prevVitals.bloodOxygen < 92) oxygenChange = -0.3;
-    }
+    console.log(`Recovery started for player ${playerId}`);
+    if (prevVitals.temperature > 38.0) tempChange = -0.2 - (Math.random() * 0.2);
+    if (prevVitals.heartRate > 130) hrChange = -3 - Math.floor(Math.random() * 5);
+    if (prevVitals.bloodOxygen < 92) oxygenChange = 0.5 + (Math.random() * 0.5);
+    if (prevVitals.hydration < 70) hydrationChange = 0.5 + (Math.random() * 1.0);
+  } else if (isInIncident) {
+    if (prevVitals.temperature > 38.0) tempChange += 0.05 + (Math.random() * 0.1);
+    if (prevVitals.heartRate > 130) hrChange += 0.5 + Math.floor(Math.random() * 2);
+    if (prevVitals.bloodOxygen < 92) oxygenChange -= 0.1 + (Math.random() * 0.2);
+    if (prevVitals.hydration < 70) hydrationChange -= 0.2 + (Math.random() * 0.3);
   }
   
   let newTemp = Math.max(35.5, Math.min(40.0, prevVitals.temperature + tempChange));
   let newHR = Math.max(40, Math.min(180, prevVitals.heartRate + hrChange));
   let newOxygen = Math.max(85, Math.min(100, prevVitals.bloodOxygen + oxygenChange));
-  
-  let newHydration = prevVitals.hydration;
-  let newRespiration = prevVitals.respiration;
-  let newFatigue = prevVitals.fatigue;
-  
-  if (newHR > 100) {
-    newRespiration += 0.3;
-    newHydration -= 0.2;
-    newFatigue += 0.3;
-  } else {
-    newRespiration += smallRandomChange();
-    newHydration += smallRandomChange() * 0.5;
-    newFatigue += smallRandomChange() * 0.5;
-  }
-  
-  newHydration = Math.max(40, Math.min(100, newHydration));
-  newRespiration = Math.max(8, Math.min(30, newRespiration));
-  newFatigue = Math.max(5, Math.min(95, newFatigue));
+  let newHydration = Math.max(40, Math.min(100, prevVitals.hydration + hydrationChange));
+  let newRespiration = Math.max(8, Math.min(35, prevVitals.respiration + respirationChange));
+  let newFatigue = Math.max(5, Math.min(95, prevVitals.fatigue + fatigueChange));
   
   const newVitals = {
     temperature: parseFloat(newTemp.toFixed(1)),

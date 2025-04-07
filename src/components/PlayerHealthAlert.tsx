@@ -25,7 +25,10 @@ const PlayerHealthAlert: React.FC<PlayerHealthAlertProps> = ({ player }) => {
       unit: '°C',
       isHigh: player.vitals.temperature > VITAL_RANGES.temperature.max,
       isLow: player.vitals.temperature < VITAL_RANGES.temperature.min,
-      normal: `${VITAL_RANGES.temperature.min}-${VITAL_RANGES.temperature.max}°C`
+      normal: `${VITAL_RANGES.temperature.min}-${VITAL_RANGES.temperature.max}°C`,
+      note: player.vitals.temperature >= 38.5 ? 
+        'Elevated body temperature indicates potential overheating. Medical evaluation recommended.' : 
+        'Temperature outside normal range. Continue monitoring.'
     });
   }
   
@@ -37,7 +40,10 @@ const PlayerHealthAlert: React.FC<PlayerHealthAlertProps> = ({ player }) => {
       unit: 'BPM',
       isHigh: player.vitals.heartRate > VITAL_RANGES.heartRate.max,
       isLow: player.vitals.heartRate < VITAL_RANGES.heartRate.min,
-      normal: `${VITAL_RANGES.heartRate.min}-${VITAL_RANGES.heartRate.max} BPM`
+      normal: `${VITAL_RANGES.heartRate.min}-${VITAL_RANGES.heartRate.max} BPM`,
+      note: player.vitals.heartRate >= 130 ? 
+        'Sustained elevated heart rate requires immediate attention.' : 
+        'Heart rate outside normal resting range.'
     });
   }
   
@@ -49,7 +55,61 @@ const PlayerHealthAlert: React.FC<PlayerHealthAlertProps> = ({ player }) => {
       unit: '%',
       isHigh: player.vitals.bloodOxygen > VITAL_RANGES.bloodOxygen.max,
       isLow: player.vitals.bloodOxygen < VITAL_RANGES.bloodOxygen.min,
-      normal: `${VITAL_RANGES.bloodOxygen.min}-${VITAL_RANGES.bloodOxygen.max}%`
+      normal: `${VITAL_RANGES.bloodOxygen.min}-${VITAL_RANGES.bloodOxygen.max}%`,
+      note: player.vitals.bloodOxygen < 92 ? 
+        'Low oxygen saturation is concerning. Medical attention needed.' : 
+        'Blood oxygen levels below optimal range.'
+    });
+  }
+  
+  // Add hydration if it's in an alert state
+  if (player.vitals.hydration !== undefined &&
+      (player.vitals.hydration < VITAL_RANGES.hydration.min || 
+       player.vitals.hydration > VITAL_RANGES.hydration.max)) {
+    abnormalVitals.push({
+      name: 'Hydration',
+      value: formatVitalValue(player.vitals.hydration, 'hydration'),
+      unit: '%',
+      isHigh: player.vitals.hydration > VITAL_RANGES.hydration.max,
+      isLow: player.vitals.hydration < VITAL_RANGES.hydration.min,
+      normal: `${VITAL_RANGES.hydration.min}-${VITAL_RANGES.hydration.max}%`,
+      note: player.vitals.hydration < 70 ? 
+        'Significant dehydration detected. Immediate rehydration required.' : 
+        'Hydration below optimal levels. Fluid intake recommended.'
+    });
+  }
+  
+  // Add respiration if it's in an alert state
+  if (player.vitals.respiration !== undefined &&
+      (player.vitals.respiration < VITAL_RANGES.respiration.min || 
+       player.vitals.respiration > VITAL_RANGES.respiration.max)) {
+    abnormalVitals.push({
+      name: 'Respiration',
+      value: formatVitalValue(player.vitals.respiration, 'respiration'),
+      unit: 'breaths/min',
+      isHigh: player.vitals.respiration > VITAL_RANGES.respiration.max,
+      isLow: player.vitals.respiration < VITAL_RANGES.respiration.min,
+      normal: `${VITAL_RANGES.respiration.min}-${VITAL_RANGES.respiration.max} breaths/min`,
+      note: player.vitals.respiration > 25 ? 
+        'Elevated respiratory rate may indicate respiratory distress.' : 
+        'Respiration rate outside normal range.'
+    });
+  }
+  
+  // Add fatigue if it's in an alert state
+  if (player.vitals.fatigue !== undefined &&
+      (player.vitals.fatigue < VITAL_RANGES.fatigue.min || 
+       player.vitals.fatigue > VITAL_RANGES.fatigue.max)) {
+    abnormalVitals.push({
+      name: 'Fatigue',
+      value: formatVitalValue(player.vitals.fatigue, 'fatigue'),
+      unit: '%',
+      isHigh: player.vitals.fatigue > VITAL_RANGES.fatigue.max,
+      isLow: player.vitals.fatigue < VITAL_RANGES.fatigue.min,
+      normal: `${VITAL_RANGES.fatigue.min}-${VITAL_RANGES.fatigue.max}%`,
+      note: player.vitals.fatigue > 70 ? 
+        'High fatigue level detected. Consider player rotation or rest.' : 
+        'Fatigue level outside normal range.'
     });
   }
 
@@ -84,14 +144,17 @@ const PlayerHealthAlert: React.FC<PlayerHealthAlertProps> = ({ player }) => {
               </p>
               <ul className="mt-1 space-y-1">
                 {abnormalVitals.map((vital, index) => (
-                  <li key={index} className="flex items-center justify-between text-sm">
-                    <span>{vital.name}:</span>
-                    <span className={vital.isHigh ? 'text-red-600 font-semibold' : vital.isLow ? 'text-blue-600 font-semibold' : ''}>
-                      {vital.value}{vital.unit} 
-                      <span className="text-gray-500 ml-2">
-                        (Normal: {vital.normal})
+                  <li key={index} className="text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{vital.name}:</span>
+                      <span className={vital.isHigh ? 'text-red-600 font-semibold' : vital.isLow ? 'text-blue-600 font-semibold' : ''}>
+                        {vital.value}{vital.unit} 
+                        <span className="text-gray-500 ml-2">
+                          (Normal: {vital.normal})
+                        </span>
                       </span>
-                    </span>
+                    </div>
+                    <p className="text-gray-600 text-xs mt-1">{vital.note}</p>
                   </li>
                 ))}
               </ul>
@@ -99,6 +162,12 @@ const PlayerHealthAlert: React.FC<PlayerHealthAlertProps> = ({ player }) => {
               {player.vitals.alertDuration && (
                 <p className="mt-2 text-sm text-gray-600">
                   Alert duration: {Math.floor(player.vitals.alertDuration)} seconds
+                  {player.vitals.alertDuration > 20 && (
+                    <span className="block text-red-600 text-xs mt-1">
+                      Warning: Sustained alert for {Math.floor(player.vitals.alertDuration)} seconds. 
+                      Immediate attention required.
+                    </span>
+                  )}
                 </p>
               )}
             </div>
